@@ -2,8 +2,8 @@
 /*
 Plugin Name: WCS Price Sync with Renewal Buffer
 Plugin URI: https://invite.hk
-Description: Automatically updates subscription prices to match current product prices when the product is updated, but only if there's a buffer time before the renewal reminder (based on your configured reminder timing). This prevents price changes after reminders are sent or imminent.
-Version: 1.4
+Description: Automatically updates subscription prices to match current product prices when the product is updated, but only if there's a buffer time before the renewal reminder. Uses WooCommerce Subscriptions' built-in "Renewal Reminder Timing" setting.
+Version: 2.0
 Author: Frey Mansikkaniemi
 Author URI: https://frey.hk
 License: GPL v2 or later
@@ -42,6 +42,42 @@ function its_wcs_price_sync_admin_notice_subscriptions_missing() {
     <?php
 }
 
+/**
+ * Get the buffer time in seconds from WCS notification settings.
+ * 
+ * @return int Buffer time in seconds.
+ */
+function wcs_get_notification_buffer_seconds() {
+    if ( ! class_exists( 'WC_Subscriptions_Admin' ) || ! class_exists( 'WC_Subscriptions_Email_Notifications' ) ) {
+        return 0;
+    }
+
+    $setting_option = get_option(
+        WC_Subscriptions_Admin::$option_prefix . WC_Subscriptions_Email_Notifications::$offset_setting_string,
+        array(
+            'number' => 3,
+            'unit'   => 'days',
+        )
+    );
+
+    if ( ! isset( $setting_option['unit'] ) || ! isset( $setting_option['number'] ) ) {
+        return 3 * DAY_IN_SECONDS; // Default to 3 days
+    }
+
+    switch ( $setting_option['unit'] ) {
+        case 'days':
+            return ( $setting_option['number'] * DAY_IN_SECONDS );
+        case 'weeks':
+            return ( $setting_option['number'] * WEEK_IN_SECONDS );
+        case 'months':
+            return ( $setting_option['number'] * MONTH_IN_SECONDS );
+        case 'years':
+            return ( $setting_option['number'] * YEAR_IN_SECONDS );
+        default:
+            return 3 * DAY_IN_SECONDS;
+    }
+}
+
 add_action( 'plugins_loaded', 'its_wcs_price_sync_init', 20 );
 function its_wcs_price_sync_init() {
 
@@ -55,20 +91,6 @@ function its_wcs_price_sync_init() {
     if ( ! class_exists( 'WC_Subscriptions' ) ) {
         add_action( 'admin_notices', 'its_wcs_price_sync_admin_notice_subscriptions_missing' );
         return;
-    }
-
-    // Add setting to WooCommerce Subscriptions settings page.
-    add_filter( 'woocommerce_subscription_settings', 'wcs_add_price_buffer_setting' );
-    function wcs_add_price_buffer_setting( $settings ) {
-        $settings[] = array(
-            'name'     => __( 'Price Update Buffer Days', 'wcs-price-sync' ),
-            'desc'     => __( 'Number of days before the next payment date to lock in prices and prevent updates. Set this to match your Renewal Reminder Timing (e.g., if reminders are sent 7 days before renewal, set to 7).', 'wcs-price-sync' ),
-            'id'       => 'wcs_price_buffer_days',
-            'type'     => 'number',
-            'default'  => '0',
-            'desc_tip' => true,
-        );
-        return $settings;
     }
     
     // Hook into product save to sync prices with buffer check.
@@ -85,7 +107,9 @@ function its_wcs_price_sync_init() {
         $new_price = $product->get_price('edit');
     
         if ( $already_processed ) {
-            $buffer_days = (int) get_option( 'wcs_price_buffer_days', 0 );
+            // Get buffer time from WCS notification settings
+            $buffer_seconds = wcs_get_notification_buffer_seconds();
+            
             $subscriptions = wcs_get_subscriptions( 
                 array(
                     'product_id'           => $post_id,
@@ -102,7 +126,7 @@ function its_wcs_price_sync_init() {
                 if ( ! $next_payment_time ) {
                     continue;
                 }
-                $buffer_time = $next_payment_time - ( $buffer_days * DAY_IN_SECONDS );
+                $buffer_time = $next_payment_time - $buffer_seconds;
                 if ( $current_time >= $buffer_time ) {
                     continue;
                 }
@@ -148,6 +172,7 @@ function its_wcs_price_sync_init() {
     add_action( 'admin_init', 'wcs_intercept_bulk_action', 1 );
     
     function wcs_intercept_bulk_action() {
+
         // Check if this is our bulk action
         if ( ! isset( $_REQUEST['action'] ) && ! isset( $_REQUEST['action2'] ) ) {
             return;
@@ -174,12 +199,15 @@ function its_wcs_price_sync_init() {
             error_log( "No posts selected" );
             return;
         }
-        
+
         check_admin_referer( 'bulk-posts' );
         
         // Get selected subscription IDs
         $post_ids = array_map( 'intval', $_REQUEST['post'] );
-        $buffer_days = (int) get_option( 'wcs_price_buffer_days', 0 );
+        
+        // Get buffer time from WCS notification settings
+        $buffer_seconds = wcs_get_notification_buffer_seconds();
+        
         $current_time = current_time( 'timestamp', true );
         $updated_count = 0;
 
@@ -202,7 +230,7 @@ function its_wcs_price_sync_init() {
                 continue;
             }
 
-            $buffer_time = $next_payment_time - ( $buffer_days * DAY_IN_SECONDS );
+            $buffer_time = $next_payment_time - $buffer_seconds;
             if ( $current_time >= $buffer_time ) {
                 //Subscription is within buffer period
                 continue;
