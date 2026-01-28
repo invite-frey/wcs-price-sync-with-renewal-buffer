@@ -29,6 +29,7 @@ This plugin adds that safety buffer logic.
 - Adds order note when price is updated
 - Lightweight — no cron jobs, no extra tables
 - Safe double-save prevention (transient lock)
+- Adds an additional reminder notification half say between the renewal reminder timing and expiration.
 
 ## Installation
 
@@ -36,32 +37,27 @@ This plugin adds that safety buffer logic.
 2. In WordPress Admin → Plugins → Add New → Upload Plugin
 3. Activate the plugin
 4. Go to **WooCommerce → Settings → Subscriptions**
-5. Set **Price Update Buffer Days** to match your renewal reminder timing (e.g. `7` if reminders go out 7 days before renewal)
+5. Toggle the Renewal Timing (either on/off or chabge the period) to force regentation if renewal notification events
 
 Done.
 
-## Screenshots
-
-(You can add 2–4 screenshots later: settings field, bulk action dropdown, subscription note example, product edit page)
-
-1. Buffer setting in Subscriptions settings
-2. Bulk sync action in subscriptions list
-3. Example order note after sync
 
 ## Changelog
 
-### 1.0 – 2026-01-xx
+### 1.0 
 * Initial public release
 * Automatic price sync on product save (with buffer check)
 * Bulk manual sync action
 * Admin notices for missing dependencies
 * Order notes on update
 
+### 2.0 
+* Added an extra renewal reminder notification at half the renewal timing period
+
 ## Frequently Asked Questions
 
 **Does it work with variable subscriptions?**  
 Currently only simple subscription products are fully supported (pulls `$product->get_price()`). Variable support would require choosing which variation — PRs welcome.
-
 
 **Why isn't the price updating even when outside buffer?**  
 Make sure:
